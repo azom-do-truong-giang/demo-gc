@@ -1,0 +1,82 @@
+steps:
+  # run from the start
+  # this will download the needed tools
+  # download will occur concurrently, and after that set execute permission
+  - id: 'download-build-tools'
+    name: 'gcr.io/cloud-builders/gcloud'
+    waitFor: ['-']
+    entrypoint: 'bash'
+    volumes:
+      - name: 'builder'
+        path: '/tools'
+    args:
+      - '-c'
+      - |
+        curl -L ${_SOPS_DOWNLOAD_LINK} --output /tools/sops --silent && \
+        chmod u+x /tools/sops
+  # run after download-build-tools finished
+  # this will decrypt the encrypted file and secret
+  # export command will allow tools to be called without defining location
+  - id: 'decrypt-files'
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    volumes:
+      - name: 'builder'
+        path: '/tools'
+    args:
+      - '-c'
+      - |
+        export PATH=$(env | grep '^PATH' | cut -d '=' -f2):/tools && \
+        sops --output ${_DECRYPTED_ENV_FILE_LOCATION} --decrypt ${_ENCRYPTED_ENV_FILE_LOCATION}
+  # run from the start
+  # this will download the latest app image, to be used as cache in the build step
+  - id: 'pull-latest-images'
+    name: 'gcr.io/cloud-builders/docker'
+    waitFor: ['-']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker pull gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE_NAME}:latest || true
+  # run build app images
+  - id: 'build-app-image'
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker build -f ${_APP_DOCKER_FILE} \
+          --cache-from gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE_NAME}:latest \
+          -t gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE_NAME}:latest \
+          -t gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE_NAME}:$TAG_NAME \
+          ${_CONTEXT_FOLDER}
+  # push to container registry
+  - id: 'push-image'
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker push gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE_NAME}:latest &&
+        docker push gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE_NAME}:$TAG_NAME
+  # deploy container image to Cloud Run
+  - id: 'deploy'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud run deploy ${_CLOUD_RUN_SERVICE_NAME} \
+          --image gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE_NAME}:$TAG_NAME \
+          --allow-unauthenticated \
+          --region asia-northeast1 \
+          --platform managed \
+          --timeout 900 \
+          --add-cloudsql-instances ${_CLOUD_SQL_INSTANCES}
+substitutions:
+  # _SOPS_DOWNLOAD_LINK: https://github.com/mozilla/sops/releases/download/v3.5.0/sops-v3.5.0.linux
+  _ENCRYPTED_ENV_FILE_LOCATION: ./.env
+  _APP_DOCKER_FILE: ./Dockerfile
+  _CLOUD_RUN_SERVICE_NAME: staging-demo-giang
+  _CLOUD_SQL_INSTANCES: /cloudsql/staging-carparking-jp:asia-northeast1:aplus-staging
+  
