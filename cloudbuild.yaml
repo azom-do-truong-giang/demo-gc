@@ -2,18 +2,18 @@ steps:
   # run from the start
   # this will download the needed tools
   # download will occur concurrently, and after that set execute permission
-  - id: 'download-build-tools'
-    name: 'gcr.io/cloud-builders/gcloud'
-    waitFor: ['-']
-    entrypoint: 'bash'
-    volumes:
-      - name: 'builder'
-        path: '/tools'
-    args:
-      - '-c'
-      - |
-        curl -L ${_SOPS_DOWNLOAD_LINK} --output /tools/sops --silent && \
-        chmod u+x /tools/sops
+  # - id: 'download-build-tools'
+  #   name: 'gcr.io/cloud-builders/gcloud'
+  #   waitFor: ['-']
+  #   entrypoint: 'bash'
+  #   volumes:
+  #     - name: 'builder'
+  #       path: '/tools'
+  #   args:
+  #     - '-c'
+  #     - |
+  #       curl -L ${_SOPS_DOWNLOAD_LINK} --output /tools/sops --silent && \
+  #       chmod u+x /tools/sops
   # run after download-build-tools finished
   # this will decrypt the encrypted file and secret
   # export command will allow tools to be called without defining location
